@@ -1,0 +1,13 @@
+.build/
+.swiftpm/
+.serena/
+dist/
+.local/
+config/work.json
+*.log
+.DS_Store
+.env
+.env.*
+*.p12
+*.pfx
+*.key
