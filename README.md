@@ -17,6 +17,9 @@ Build the matching app and installer on the target Mac:
 bash scripts/build-app.sh
 ```
 
+An optional output directory can be supplied, for example
+`bash scripts/build-app.sh dist/v2`.
+
 Open `dist/PPTPClient.pkg` in macOS Installer and enter the administrator password
 in the system dialog. Installation places `PPTPClient.app` in `/Applications` and
 registers an on-demand launchd helper. Open the installed app, import your existing
@@ -91,7 +94,18 @@ Run `swift test` for protocol, lifecycle, profile, model, Keychain and XPC trust
 tests, and the transport smoke command above for TCP framing/timeouts. The real
 Keychain test uses a new temporary item and removes it afterward; it can skip if
 the login keychain is unavailable. Wrong-signature rejection is exercised using
-a local anonymous XPC listener; owner UID rejection is unit-tested.
+a local anonymous XPC listener; owner UID rejection is unit-tested. With a working
+installed app/helper, also check that a separate executable cannot call the service:
+
+```sh
+xcrun swiftc scripts/check-helper-rejection.swift -module-cache-path .build/ModuleCache -o .build/check-helper-rejection
+.build/check-helper-rejection
+```
+
+The probe sends only `hello` and does not alter a VPN session. Run it only after
+confirming the installed app can reach the helper: an unavailable service also
+rejects a connection. The local validation run passed 63 tests, four TCP smoke
+checks, the installed app/helper handshake and this untrusted-client probe.
 
 Actual VPN reachability requires a local profile and credentials entered by the
 user. Manual acceptance checks: connect, verify an internal service, close the
