@@ -19,7 +19,8 @@ cp "$BIN/pptp-helper" "$HELPER"
 cp packaging/local.pptpclient.helper.plist "$PAYLOAD/Library/LaunchDaemons/"
 chmod 755 "$HELPER" "$APP/Contents/MacOS/PPTPClientApp"
 codesign --force --sign - --options runtime --identifier local.pptpclient.helper "$HELPER"
-HELPER_REQUIREMENT=$(codesign -d -r- "$HELPER" 2>&1 | sed -n 's/^designated => //p')
+HELPER_REQUIREMENT=$(codesign -d -r- "$HELPER" 2>&1 | sed -En 's/^(# )?designated => //p')
+test -n "$HELPER_REQUIREMENT" || { echo 'Missing helper code requirement' >&2; exit 1; }
 export APP HELPER_REQUIREMENT VERSION TRUST_DIR
 python3 - <<'PY'
 import os,plistlib,pathlib
@@ -41,14 +42,19 @@ for SIZE in 16 32 128 256 512; do
 done
 iconutil -c icns "$STAGE/AppIcon.iconset" -o "$APP/Contents/Resources/AppIcon.icns"
 codesign --force --sign - --options runtime --identifier local.pptpclient "$APP"
-CLIENT_REQUIREMENT=$(codesign -d -r- "$APP" 2>&1 | sed -n 's/^designated => //p')
+CLIENT_REQUIREMENT=$(codesign -d -r- "$APP" 2>&1 | sed -En 's/^(# )?designated => //p')
+test -n "$CLIENT_REQUIREMENT" || { echo 'Missing app code requirement' >&2; exit 1; }
 export CLIENT_REQUIREMENT
 python3 - <<'PY'
 import os,plistlib,pathlib
 trust={'ownerUID':0,'clientRequirement':os.environ['CLIENT_REQUIREMENT'],
        'helperRequirement':os.environ['HELPER_REQUIREMENT'],'protocolVersion':2}
+assert trust['clientRequirement'].startswith('cdhash H"')
+assert trust['helperRequirement'].startswith('cdhash H"')
 with (pathlib.Path(os.environ['TRUST_DIR'])/'trust.plist').open('wb') as f: plistlib.dump(trust,f)
 PY
+codesign --verify --strict --test-requirement "=$CLIENT_REQUIREMENT" "$APP"
+codesign --verify --strict --test-requirement "=$HELPER_REQUIREMENT" "$HELPER"
 chmod +x packaging/scripts/preinstall packaging/scripts/postinstall
 export STAGE
 python3 - <<'PY'

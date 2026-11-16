@@ -12,6 +12,11 @@ if [ "$OWNER_UID" -lt 501 ]; then
 fi
 /usr/bin/codesign --verify --strict "$APP"
 /usr/bin/codesign --verify --strict "$HELPER"
+CLIENT_REQUIREMENT=$(/usr/libexec/PlistBuddy -c 'Print :clientRequirement' "$TRUST")
+HELPER_REQUIREMENT=$(/usr/libexec/PlistBuddy -c 'Print :helperRequirement' "$TRUST")
+test -n "$CLIENT_REQUIREMENT" && test -n "$HELPER_REQUIREMENT"
+/usr/bin/codesign --verify --strict --test-requirement "=$CLIENT_REQUIREMENT" "$APP"
+/usr/bin/codesign --verify --strict --test-requirement "=$HELPER_REQUIREMENT" "$HELPER"
 /usr/libexec/PlistBuddy -c "Set :ownerUID $OWNER_UID" "$TRUST"
 /usr/sbin/chown -R root:wheel "$APP"
 /usr/sbin/chown root:wheel "$HELPER" "$PLIST" "$TRUST_DIR" "$TRUST"
