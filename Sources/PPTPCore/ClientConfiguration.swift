@@ -1,13 +1,23 @@
 import Foundation
 
-public struct ClientConfiguration: Decodable, Sendable {
-    public let server: String
-    public let port: UInt16?
-    public let authentication: String
-    public let encryption: String
-    public let routes: [String]
-    public let dnsServers: [String]?
-    public let dnsDomains: [String]?
+public struct ClientConfiguration: Codable, Sendable, Equatable {
+    public var server: String
+    public var port: UInt16?
+    public var authentication: String
+    public var encryption: String
+    public var routes: [String]
+    public var dnsServers: [String]?
+    public var dnsDomains: [String]?
+
+    public init(server: String = "", port: UInt16 = 1723, routes: [String] = [], dnsServers: [String] = [], dnsDomains: [String] = []) {
+        self.server = server
+        self.port = port
+        authentication = "pap"
+        encryption = "none"
+        self.routes = routes
+        self.dnsServers = dnsServers
+        self.dnsDomains = dnsDomains
+    }
 
     public static func load(_ data: Data) throws -> ClientConfiguration {
         guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {

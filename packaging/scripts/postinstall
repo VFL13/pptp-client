@@ -1,0 +1,22 @@
+#!/bin/sh
+set -eu
+APP=/Applications/PPTPClient.app
+HELPER=/Library/PrivilegedHelperTools/local.pptpclient.helper
+PLIST=/Library/LaunchDaemons/local.pptpclient.helper.plist
+TRUST_DIR='/Library/Application Support/PPTPClient'
+TRUST="$TRUST_DIR/trust.plist"
+OWNER_UID=$(/usr/bin/stat -f '%u' /dev/console)
+if [ "$OWNER_UID" -lt 501 ]; then
+    echo 'Install while signed in to the Mac user account that will run PPTPClient.' >&2
+    exit 1
+fi
+/usr/bin/codesign --verify --strict "$APP"
+/usr/bin/codesign --verify --strict "$HELPER"
+/usr/libexec/PlistBuddy -c "Set :ownerUID $OWNER_UID" "$TRUST"
+/usr/sbin/chown -R root:wheel "$APP"
+/usr/sbin/chown root:wheel "$HELPER" "$PLIST" "$TRUST_DIR" "$TRUST"
+/bin/chmod 755 "$HELPER" "$TRUST_DIR"
+/bin/chmod 644 "$PLIST" "$TRUST"
+/bin/launchctl bootstrap system "$PLIST"
+/bin/launchctl enable system/local.pptpclient.helper
+exit 0

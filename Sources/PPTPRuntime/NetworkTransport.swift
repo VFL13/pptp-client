@@ -10,7 +10,7 @@ private final class CallbackResult<Value>: @unchecked Sendable {
     private var value: Result<Value, Error>?
     let ready = DispatchSemaphore(value: 0)
 
-    func complete(_ result: Result<Value, Error>) {
+    public func complete(_ result: Result<Value, Error>) {
         lock.lock()
         guard value == nil else { lock.unlock(); return }
         value = result
@@ -18,9 +18,10 @@ private final class CallbackResult<Value>: @unchecked Sendable {
         ready.signal()
     }
 
-    func wait(until deadline: DispatchTime) throws -> Value {
-        guard ready.wait(timeout: deadline) == .success else {
-            throw PPTPError("PPTP probe timed out")
+    public func wait(until deadline: DispatchTime, cancelled: () -> Bool = { false }) throws -> Value {
+        while ready.wait(timeout: min(deadline, .now() + 0.1)) != .success {
+            if cancelled() { throw SessionRunError.cancelled }
+            if DispatchTime.now() >= deadline { throw PPTPError("PPTP operation timed out") }
         }
         lock.lock()
         defer { lock.unlock() }
@@ -31,20 +32,22 @@ private final class CallbackResult<Value>: @unchecked Sendable {
 
 // Mutable operation deadlines belong to the caller thread. Network callbacks
 // touch only the synchronized byte buffer and Network.framework connection.
-final class NetworkTransport: ControlTransport, @unchecked Sendable {
+public final class NetworkTransport: ControlTransport, @unchecked Sendable {
     private let connection: NWConnection
     private var deadline: DispatchTime
+    private let cancelled: @Sendable () -> Bool
     private let input = NetworkInput()
 
-    convenience init(host: String, port: UInt16, timeout: Double) throws {
+    public convenience init(host: String, port: UInt16, timeout: Double) throws {
         try self.init(host: host, port: port, deadline: .now() + timeout)
     }
 
-    init(host: String, port: UInt16, deadline: DispatchTime) throws {
+    public init(host: String, port: UInt16, deadline: DispatchTime, cancelled: @escaping @Sendable () -> Bool = { false }) throws {
         guard let endpointPort = NWEndpoint.Port(rawValue: port) else {
             throw PPTPError("invalid TCP port")
         }
         self.deadline = deadline
+        self.cancelled = cancelled
         // DNS resolution, TCP connection, writes and reads share one deadline.
         connection = NWConnection(host: NWEndpoint.Host(host), port: endpointPort, using: .tcp)
         let result = CallbackResult<Void>()
@@ -61,7 +64,7 @@ final class NetworkTransport: ControlTransport, @unchecked Sendable {
         }
         connection.start(queue: DispatchQueue(label: "pptp.control.transport"))
         do {
-            try result.wait(until: deadline)
+            try result.wait(until: deadline, cancelled: cancelled)
             receiveMore()
         } catch {
             connection.cancel()
@@ -71,22 +74,22 @@ final class NetworkTransport: ControlTransport, @unchecked Sendable {
 
     deinit { connection.cancel() }
 
-    func setDeadline(_ value: DispatchTime) { deadline = value }
+    public func setDeadline(_ value: DispatchTime) { deadline = value }
 
-    func write(_ bytes: [UInt8]) throws {
+    public func write(_ bytes: [UInt8]) throws {
         let result = CallbackResult<Void>()
         connection.send(content: Data(bytes), completion: .contentProcessed { error in
             if let error { result.complete(.failure(error)) }
             else { result.complete(.success(())) }
         })
-        try result.wait(until: deadline)
+        try result.wait(until: deadline, cancelled: cancelled)
     }
 
-    func readExactly(_ count: Int) throws -> [UInt8] {
-        try input.read(count, deadline: deadline)
+    public func readExactly(_ count: Int) throws -> [UInt8] {
+        try input.read(count, deadline: deadline, cancelled: cancelled)
     }
 
-    func readAvailableMessage() throws -> ControlMessage? { try input.message() }
+    public func readAvailableMessage() throws -> ControlMessage? { try input.message() }
 
     private func receiveMore() {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 4096) { [weak self] data, _, complete, error in
@@ -106,7 +109,7 @@ private final class NetworkInput: @unchecked Sendable {
     private var bytes: [UInt8] = []
     private var error: Error?
 
-    func append(_ data: Data) -> Bool {
+    public func append(_ data: Data) -> Bool {
         condition.lock()
         defer { condition.broadcast(); condition.unlock() }
         guard bytes.count + data.count <= 65536 else {
@@ -116,16 +119,17 @@ private final class NetworkInput: @unchecked Sendable {
         bytes += data
         return true
     }
-    func fail(_ value: Error) {
+    public func fail(_ value: Error) {
         condition.lock()
         error = value
         condition.broadcast()
         condition.unlock()
     }
-    func read(_ count: Int, deadline: DispatchTime) throws -> [UInt8] {
+    public func read(_ count: Int, deadline: DispatchTime, cancelled: () -> Bool) throws -> [UInt8] {
         condition.lock()
         defer { condition.unlock() }
         while bytes.count < count {
+            if cancelled() { throw SessionRunError.cancelled }
             if let error { throw error }
             let now = DispatchTime.now().uptimeNanoseconds
             guard now < deadline.uptimeNanoseconds else { throw PPTPError("PPTP operation timed out") }
@@ -136,7 +140,7 @@ private final class NetworkInput: @unchecked Sendable {
         bytes.removeFirst(count)
         return result
     }
-    func message() throws -> ControlMessage? {
+    public func message() throws -> ControlMessage? {
         condition.lock()
         defer { condition.unlock() }
         guard bytes.count >= 12 else {

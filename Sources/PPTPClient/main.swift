@@ -1,6 +1,7 @@
 import Darwin
 import Foundation
 import PPTPCore
+import PPTPRuntime
 
 let usage = """
 PPTPClient — experimental IPv4 PPTP client for macOS

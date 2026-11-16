@@ -3,12 +3,12 @@ import Dispatch
 import Foundation
 import PPTPCore
 
-final class RawGRETransport: GRETransport {
-    let descriptor: Int32
+public final class RawGRETransport: GRETransport {
+    public let descriptor: Int32
     private let peerBytes: [UInt8]
     private var deadline: DispatchTime
 
-    init(ip: String, deadline: DispatchTime) throws {
+    public init(ip: String, deadline: DispatchTime) throws {
         var peer = sockaddr_in()
         peer.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
         peer.sin_family = sa_family_t(AF_INET)
@@ -39,9 +39,9 @@ final class RawGRETransport: GRETransport {
 
     deinit { close(descriptor) }
 
-    func setDeadline(_ value: DispatchTime) { deadline = value }
+    public func setDeadline(_ value: DispatchTime) { deadline = value }
 
-    func receiveAvailable() throws -> GREPacket? {
+    public func receiveAvailable() throws -> GREPacket? {
         var bytes = [UInt8](repeating: 0, count: 65535)
         let count = bytes.withUnsafeMutableBytes { recv(descriptor, $0.baseAddress, $0.count, 0) }
         if count < 0 {
@@ -51,7 +51,7 @@ final class RawGRETransport: GRETransport {
         return try GREPacket.decodeIPv4(Array(bytes.prefix(count)), expectedSource: peerBytes)
     }
 
-    func send(_ packet: GREPacket) throws {
+    public func send(_ packet: GREPacket) throws {
         let bytes = try packet.encoded()
         while true {
             try wait(for: Int16(POLLOUT))
@@ -65,7 +65,7 @@ final class RawGRETransport: GRETransport {
         }
     }
 
-    func receive() throws -> GREPacket {
+    public func receive() throws -> GREPacket {
         var bytes = [UInt8](repeating: 0, count: 65535)
         while true {
             try wait(for: Int16(POLLIN))
